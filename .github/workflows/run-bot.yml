@@ -1,0 +1,56 @@
+name: Run Bot
+
+on:
+  schedule:
+    # Запуск каждые 2 минуты
+    - cron: "*/5 * * * *"
+  workflow_dispatch: # ручной запуск кнопкой
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install openai requests
+
+      - name: Load dialogue
+        uses: actions/checkout@v4
+        with:
+          ref: dialogue-data
+          path: dialogue-branch
+        continue-on-error: true
+
+      - name: Copy dialogue if exists
+        run: |
+          if [ -f dialogue-branch/dialogue.json ]; then
+            cp dialogue-branch/dialogue.json dialogue.json
+          fi
+        continue-on-error: true
+
+      - name: Run bot
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          USER_TIMEZONE: ${{ secrets.USER_TIMEZONE }}
+        run: python bot.py
+
+      - name: Save dialogue
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout dialogue-data 2>/dev/null || git checkout --orphan dialogue-data
+          cp dialogue.json . 2>/dev/null || true
+          git add dialogue.json
+          git commit -m "Update dialogue" || echo "No changes"
+          git push origin dialogue-data
+        continue-on-error: true
