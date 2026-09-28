@@ -92,7 +92,6 @@ def get_weather():
 
 
 def get_context_block(user_tz):
-    # Знак перевёрнут в Etc/GMT, поэтому минус
     tz = ZoneInfo(f"Etc/GMT{-user_tz:+d}")
     now = datetime.now(tz)
     hour = now.hour
@@ -169,6 +168,7 @@ def send_telegram(text):
 
 
 def get_new_telegram_updates(last_update_id):
+    """Возвращает список текстов новых сообщений с отладкой."""
     url = f"https://api.telegram.org/bot{os.environ['TELEGRAM_TOKEN']}/getUpdates"
     try:
         r = requests.get(url, params={
@@ -177,16 +177,22 @@ def get_new_telegram_updates(last_update_id):
             "limit": 10
         }, timeout=10)
         if r.status_code != 200:
-            print(f"Telegram getUpdates Error: {r.status_code}")
+            print(f"Telegram getUpdates Error: {r.status_code} {r.text[:300]}")
             return [], last_update_id
         updates = r.json().get("result", [])
+        print(f"[DEBUG] Получено raw-обновлений: {len(updates)}")
         result = []
         new_last_id = last_update_id
         for u in updates:
             new_last_id = max(new_last_id, u["update_id"])
             if "message" in u and "text" in u["message"]:
-                if str(u["message"]["chat"]["id"]) == os.environ.get("CHAT_ID"):
+                chat_id = str(u["message"]["chat"]["id"])
+                expected_chat_id = os.environ.get("CHAT_ID", "")
+                print(f"[DEBUG] Сообщение от chat_id={chat_id}, ожидаемый={expected_chat_id}")
+                if chat_id == expected_chat_id:
                     result.append(u["message"]["text"])
+                else:
+                    print(f"[DEBUG] Пропущено: chat_id не совпадает")
         if new_last_id > last_update_id:
             requests.get(url, params={
                 "timeout": 0,
@@ -209,6 +215,10 @@ def main():
         print(f"DEBUG: ключ найден, длина={len(_key)}, начало={_key[:8]}..., конец=...{_key[-4:]}")
     else:
         print("DEBUG: OPENROUTER_API_KEY = [ПУСТО]")
+
+    # --- ОТЛАДКА: проверяем CHAT_ID ---
+    _chat_id = os.environ.get("CHAT_ID", "")
+    print(f"DEBUG: CHAT_ID = '{_chat_id}' (тип: {type(_chat_id).__name__})")
 
     user_tz = int(os.environ.get("USER_TIMEZONE") or "6")
     dialogue = load_dialogue()
@@ -344,7 +354,6 @@ def main():
     print(f"Отвечаю на: {fresh[-1][:80]}...")
 
     # --- НОЧНОЙ РЕЖИМ: 23:00-07:00 ---
-    # Кандо спит. Если его разбудили — отвечает коротко и сонно.
     if is_night:
         night_responses = [
             "Хррр... Что? Который час? Нет, я сплю. Утром поговорим.",
